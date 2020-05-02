@@ -56,20 +56,7 @@
 #include "extension/fake_id0/exec.h"
 #include "extension/fake_id0/shm.h"
 #include "extension/fake_id0/sem.h"
-#include "extension/fake_id0/prctl.h"
 #include "extension/fake_id0/helper_functions.h"
-#ifdef USERLAND
-#include "extension/fake_id0/open.h"
-#include "extension/fake_id0/unlink.h"
-#include "extension/fake_id0/rename.h"
-#include "extension/fake_id0/chmod.h"
-#include "extension/fake_id0/utimensat.h"
-#include "extension/fake_id0/access.h"
-#include "extension/fake_id0/link.h"
-#include "extension/fake_id0/symlink.h"
-#include "extension/fake_id0/mk.h"
-#include "extension/fake_id0/stat.h"
-#endif
 
 /**
  * Copy config->@field to the tracee's memory location pointed to by @sysarg.
@@ -268,21 +255,6 @@ typedef struct {
 
 /* List of syscalls handled by this extensions.  */
 static FilteredSysnum filtered_sysnums[] = {
-#ifdef USERLAND
-	{ PR_access,		FILTER_SYSEXIT },
-	{ PR_creat,		FILTER_SYSEXIT },
-	{ PR_faccessat,		FILTER_SYSEXIT },
-	{ PR_link,		FILTER_SYSEXIT },
-	{ PR_linkat,		FILTER_SYSEXIT },
-	{ PR_mkdir,		FILTER_SYSEXIT },
-	{ PR_mkdirat,		FILTER_SYSEXIT },
-	{ PR_symlink,		FILTER_SYSEXIT },
-	{ PR_symlinkat,		FILTER_SYSEXIT },
-	{ PR_umask,		FILTER_SYSEXIT },
-	{ PR_unlink,		FILTER_SYSEXIT },
-	{ PR_unlinkat,		FILTER_SYSEXIT },
-	{ PR_utimensat,		FILTER_SYSEXIT },
-#endif
 	{ PR_capset,		FILTER_SYSEXIT },
 	{ PR_chmod,		FILTER_SYSEXIT },
 	{ PR_chown,		FILTER_SYSEXIT },
@@ -357,7 +329,6 @@ static FilteredSysnum filtered_sysnums[] = {
 	{ PR_semget,		FILTER_SYSEXIT },
 	{ PR_semctl,		FILTER_SYSEXIT },
 	{ PR_semop,		FILTER_SYSEXIT },
-	{ PR_prctl,		FILTER_SYSEXIT },
 	FILTERED_SYSNUM_END,
 };
 
@@ -512,16 +483,6 @@ static int handle_perm_err_exit_end(Tracee *tracee, Config *config) {
 	/* Override only permission errors.  */
 	result = peek_reg(tracee, CURRENT, SYSARG_RESULT);
 
-#ifdef USERLAND
-	/** If the call has been set to PR_void, it "succeeded" in
-	 *  altering a meta file correctly.
-	 */ 
-	if(get_sysnum(tracee, CURRENT) == PR_getuid && (int) result != 0) 
-		poke_reg(tracee, SYSARG_RESULT, 0);
-	if(get_sysnum(tracee, CURRENT) == PR_void && (int) result != 0) 
-		poke_reg(tracee, SYSARG_RESULT, 0);
-#endif
-
 	if ((int) result != -EPERM && (int) result != -EACCES)
 		return 0;
 
@@ -564,121 +525,6 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 	case PR_execve:
 		return handle_exec_enter_end(tracee, SYSARG_1, config);
 
-#ifdef USERLAND
-	/* handle_open(tracee, fd_sysarg, path_sysarg, flags_sysarg, mode_sysarg, config) */
-	/* int openat(int dirfd, const char *pathname, int flags, mode_t mode) */
-	case PR_openat:
-		return handle_open_enter_end(tracee, SYSARG_1, SYSARG_2, SYSARG_3, SYSARG_4, config);
-	/* int open(const char *pathname, int flags, mode_t mode) */
-	case PR_open:
-		return handle_open_enter_end(tracee, IGNORE_SYSARG, SYSARG_1, SYSARG_2, SYSARG_3, config); 
-	/* int creat(const char *pathname, mode_t mode) */
-	case PR_creat:
-		return handle_open_enter_end(tracee, IGNORE_SYSARG, SYSARG_1, IGNORE_SYSARG, SYSARG_2, config);
-
-	/* handle_mk(tracee, fd_sysarg, path_sysarg, mode_sysarg, config) */
-	/* int mkdirat(int dirfd, const char *pathname, mode_t mode) */
-	case PR_mkdirat:
-		return handle_mk_enter_end(tracee, SYSARG_1, SYSARG_2, SYSARG_3, config);
-	/* int mkdir(const char *pathname, mode_t mode) */
-	case PR_mkdir:
-		return handle_mk_enter_end(tracee, IGNORE_SYSARG, SYSARG_1, SYSARG_2, config); 
-
-	/* handle_mk(tracee, fd_sysarg, path_sysarg, mode_sysarg, config) */
-	/* int mknodat(int dirfd, const char *pathname, mode_t mode, dev_t dev); */
-	case PR_mknodat:
-		return handle_mk_enter_end(tracee, SYSARG_1, SYSARG_2, SYSARG_3, config);
-	/* int mknod(const char *pathname, mode_t mode, dev_t dev); */
-	case PR_mknod:
-		return handle_mk_enter_end(tracee, IGNORE_SYSARG, SYSARG_1, SYSARG_2, config);
-
-	/* handle_unlink(tracee, fd_sysarg, path_sysarg, config) */
-	/* int unlinkat(int dirfd, const char *pathname, int flags) */
-	case PR_unlinkat:
-		return handle_unlink_enter_end(tracee, SYSARG_1, SYSARG_2, config);
-	/* int rmdir(const char *pathname */
-	case PR_rmdir:
-	/* int unlink(const char *pathname) */
-	case PR_unlink:
-		return handle_unlink_enter_end(tracee, IGNORE_SYSARG, SYSARG_1, config);
-
-	/* handle_rename(tracee, oldfd_sysarg, oldpath_sysarg, newfd_sysarg, newpath_sysarg, config) */
-	/* int renameat(int olddirfd, const char *oldpath, int newdirfd, const char *newpath) */
-	case PR_renameat:
-		return handle_rename_enter_end(tracee, SYSARG_1, SYSARG_2, SYSARG_3, SYSARG_4, config);
-	/* int rename(const char *oldpath, const char *newpath) */
-	case PR_rename:
-		return handle_rename_enter_end(tracee, IGNORE_SYSARG, SYSARG_1, IGNORE_SYSARG, SYSARG_2, config);
-
-	/* handle_chmod(tracee, path_sysarg, mode_sysarg, fd_sysarg, dirfd_sysarg, config) */
-	/* int chmod(const char *pathname, mode_t mode) */
-	case PR_chmod:
-		return handle_chmod_enter_end(tracee, SYSARG_1, SYSARG_2, IGNORE_SYSARG, IGNORE_SYSARG, config); 
-	/* int fchmod(int fd, mode_t mode) */
-	case PR_fchmod: 
-		return handle_chmod_enter_end(tracee, IGNORE_SYSARG, SYSARG_2, 
-			SYSARG_1, IGNORE_SYSARG, config);
-	/* int fchmodat(int dirfd, const char *pathname, mode_t mode, int flags (unused)) */
-	case PR_fchmodat:
-		return handle_chmod_enter_end(tracee, SYSARG_2, SYSARG_3, 
-			IGNORE_SYSARG, SYSARG_1, config);
-
-	/* handle_chown(tracee, path_sysarg, owner_sysarg, group_sysarg, fd_sysarg, dirfd_sysarg, config) */
-	/* int chown(const char *pathname, uid_t owner, gid_t group) */
-	case PR_chown:
-	case PR_chown32:
-		return handle_chown_enter_end(tracee, SYSARG_1, SYSARG_2, SYSARG_3, 
-			IGNORE_SYSARG, IGNORE_SYSARG, config);
-	/* int fchown(int fd, uid_t owner, gid_t group) */
-	case PR_fchown:
-	case PR_fchown32:
-		return handle_chown_enter_end(tracee, IGNORE_SYSARG, SYSARG_2, SYSARG_3,
-			SYSARG_1, IGNORE_SYSARG, config);
-	/* int lchown(const char *pathname, uid_t owner, gid_t group) */
-	case PR_lchown:
-	case PR_lchown32:
-		return handle_chown_enter_end(tracee, SYSARG_1, SYSARG_2, SYSARG_3,
-			IGNORE_SYSARG, IGNORE_SYSARG, config);
-	/* int fchownat(int dirfd, const char *pathname, uid_t owner, gid_t group, int flags (unused)) */
-	case PR_fchownat:
-		return handle_chown_enter_end(tracee, SYSARG_2, SYSARG_3, SYSARG_4,
-			IGNORE_SYSARG, SYSARG_1, config);
-
-	/* handle_utimensat(tracee, dirfd_sysarg, path_sysarg, times_sysarg, config) */
-	/* int utimensat(int dirfd, const char *pathname, const struct timespec times[2], int flags) */
-	case PR_utimensat:
-		return handle_utimensat_enter_end(tracee, SYSARG_1, SYSARG_2, SYSARG_3, config);
-
-	/* handle_access(tracee path_sysarg, mode_sysarg, dirfd_sysarg, config) */
-	/* int access(const char *pathname, int mode) */
-	case PR_access: 
-		return handle_access_enter_end(tracee, SYSARG_1, SYSARG_2, IGNORE_SYSARG, config);
-	/* int faccessat(int dirfd, const char *pathname, int mode, int flags) */
-	case PR_faccessat:
-		return handle_access_enter_end(tracee, SYSARG_2, SYSARG_3, SYSARG_1, config); 
-
-
-	/* handle_link(tracee, olddirfd_sysarg, oldpath_sysarg, newdirfd_sysarg, newpath_sysarg, config) */
-	/* int link(const char *oldpath, const char *newpath) */
-	case PR_link:
-		return handle_link_enter_end(tracee, IGNORE_SYSARG, SYSARG_1, IGNORE_SYSARG, SYSARG_2, config);
-	/* int linkat(int olddirfd, const char *oldpath, int newdirfd, const char *newpath, int flags) */
-	case PR_linkat:
-		return handle_link_enter_end(tracee, SYSARG_1, SYSARG_2, SYSARG_3, SYSARG_4, config);
-
-	/* handle_symlink(tracee, oldpath_sysarg, newdirfd_sysarg, newpath_sysarg, config) */
-	/* int symlink(const char *target, const char *linkpath); */
-	case PR_symlink:
-		return handle_symlink_enter_end(tracee, SYSARG_1, IGNORE_SYSARG, SYSARG_2, config);
-	/* int symlinkat(const char *target, int newdirfd, const char *linkpath); */
-	case PR_symlinkat:
-		return handle_symlink_enter_end(tracee, SYSARG_1, SYSARG_2, SYSARG_3, config);
-
-	/* int fstat(int fd, struct stat *buf); */
-	case PR_fstat:
-	case PR_fstat64:
-		return handle_stat_enter_end(tracee, SYSARG_1);
-#endif
 	case PR_sendmsg:
 	case PR_socketcall:
 		return handle_sendmsg_enter_end(tracee, sysnum);
@@ -699,14 +545,10 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 	case PR_setfsuid32:
 	case PR_setfsgid:
 	case PR_setfsgid32:
-#ifdef USERLAND
- 	case PR_umask:
-#endif
 		/* These syscalls are fully emulated.  */
 		set_sysnum(tracee, PR_void);
 		return 0;
 
-#ifndef USERLAND
 	case PR_fchownat: 
 		uid_sysarg = SYSARG_3;
 		gid_sysarg = SYSARG_4;
@@ -717,7 +559,6 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 	case PR_fchown:
 	case PR_fchown32:
 		return handle_chown_enter_end(tracee, config, uid_sysarg, gid_sysarg);
-#endif
 
 	case PR_setgroups:
 	case PR_setgroups32:
@@ -751,9 +592,6 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 		set_sysnum(tracee, PR_void);
 		return 0;
 	
-	case PR_prctl:
-		return handle_prctl_sysenter_end(tracee);
-
 	default:
 		return 0;
 	}
@@ -771,86 +609,11 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 static int handle_sysexit_end(Tracee *tracee, Config *config)
 {
 	word_t sysnum;
-#ifdef USERLAND
-	word_t result;
-#endif
-#ifndef USERLAND
 	Reg stat_sysarg = SYSARG_2;
-#endif
 
 	RegVersion stage = (tracee->restore_original_regs_after_seccomp_event) ? ORIGINAL_SECCOMP_REWRITE : ORIGINAL;
 
 	sysnum = get_sysnum(tracee, stage);
-
-#ifdef USERLAND
-	if ((get_sysnum(tracee, CURRENT) == PR_fstat) || (get_sysnum(tracee, CURRENT) == PR_fstat64)) {
-		word_t address;
-		Reg sysarg;
-		uid_t uid;
-		gid_t gid;
-		
-		/* Override only if it succeed.  */
-		result = peek_reg(tracee, CURRENT, SYSARG_RESULT);
-		if (result != 0)
-			return 0;
-		
-		/* Get the address of the 'stat' structure.  */
-		sysarg = SYSARG_2;
-		
-		address = peek_reg(tracee, stage, sysarg);
-		
-		/* Sanity checks.  */
-		assert(__builtin_types_compatible_p(uid_t, uint32_t));
-		assert(__builtin_types_compatible_p(gid_t, uint32_t));
-		
-		/* Get the uid & gid values from the 'stat' structure.  */
-		uid = peek_uint32(tracee, address + offsetof_stat_uid(tracee));
-		if (errno != 0)
-			uid = 0; /* Not fatal.  */
-		
-		gid = peek_uint32(tracee, address + offsetof_stat_gid(tracee));
-		if (errno != 0)
-			gid = 0; /* Not fatal.  */
-		
-		/* Override only if the file is owned by the current user.
-		*		  * Errors are not fatal here.  */
-		if (uid == getuid())
-			poke_uint32(tracee, address + offsetof_stat_uid(tracee), config->suid);
-		
-		if (gid == getgid())
-			poke_uint32(tracee, address + offsetof_stat_gid(tracee), config->sgid);
-		
-		return 0;
-	}
-
-	if (((sysnum == PR_fstat) || (sysnum == PR_fstat64)) && (get_sysnum(tracee, CURRENT) == PR_readlinkat)) {
-		int status;
-		char path[PATH_MAX];
-		result = peek_reg(tracee, CURRENT, SYSARG_RESULT);
-		poke_reg(tracee, SYSARG_RESULT, 0);
-		if ((int)result <= 0)
-			return result;
-
-		status = read_sysarg_path(tracee, path, SYSARG_3, MODIFIED);
-		if(status < 0) 
-			return status;
-
-		path[result] = '\0';
-
-		if ((strcmp(path + strlen(path) - strlen(" (deleted)"), " (deleted)") == 0) || (strncmp(path, "pipe", 4) == 0)) {
-			register_chained_syscall(tracee, sysnum, peek_reg(tracee, stage, SYSARG_1), peek_reg(tracee, stage, SYSARG_2), 0, 0, 0, 0);
-		} else {
-			write_data(tracee, peek_reg(tracee, MODIFIED, SYSARG_3), path, sizeof(path));
-#		   if defined(__x86_64__)
-				register_chained_syscall(tracee, PR_newfstatat, AT_FDCWD, peek_reg(tracee, MODIFIED, SYSARG_3), peek_reg(tracee, stage, SYSARG_2), 0, 0, 0);
-#		   else
-				register_chained_syscall(tracee, PR_fstatat64, AT_FDCWD, peek_reg(tracee, MODIFIED, SYSARG_3), peek_reg(tracee, stage, SYSARG_2), 0, 0, 0);
-#		   endif
-		}
-
-		return 0;
-	}
-#endif 
 
 	switch (sysnum) {
 
@@ -914,13 +677,6 @@ static int handle_sysexit_end(Tracee *tracee, Config *config)
 	case PR_getresgid32:
 		return handle_getresgid_exit_end(tracee, config);
 
-#ifdef USERLAND
-	case PR_umask:
-		poke_reg(tracee, SYSARG_RESULT, config->umask);
-		config->umask = (mode_t) peek_reg(tracee, MODIFIED, SYSARG_1); 
-		return 0;
-#endif
-
 	case PR_setgroups:
 	case PR_setgroups32:
 	case PR_getgroups:
@@ -952,7 +708,6 @@ static int handle_sysexit_end(Tracee *tracee, Config *config)
 	case PR_socket: 
 		return handle_socket_exit_end(tracee, config);
 
-#ifndef USERLAND
 	case PR_fstatat64:
 	case PR_newfstatat:
 		stat_sysarg = SYSARG_3;
@@ -963,19 +718,6 @@ static int handle_sysexit_end(Tracee *tracee, Config *config)
 	case PR_lstat:
 	case PR_fstat: 
 		return handle_stat_exit_end(tracee, config, stat_sysarg);
-#endif /* ifndef USERLAND */
-
-#ifdef USERLAND
-	case PR_fstatat64:
-	case PR_newfstatat:
-	case PR_stat64:
-	case PR_lstat64:
-	case PR_fstat64:
-	case PR_stat:
-	case PR_lstat:
-	case PR_fstat: 
-		return handle_stat_exit_end(tracee, config, sysnum);
-#endif /* ifdef USERLAND */
 
 	case PR_chroot: 
 		return handle_chroot_exit_end(tracee, config, false);
@@ -983,44 +725,6 @@ static int handle_sysexit_end(Tracee *tracee, Config *config)
 	case PR_getsockopt:
 		return handle_getsockopt_exit_end(tracee);
 
-#ifdef USERLAND
-/** Check to see if a meta was created for a file that no longer exists.
- *  If so, delete it.
- */
-	case PR_open:
-	case PR_openat:
-	case PR_creat: {
-		int status;
-		Reg sysarg;
-		char path[PATH_MAX];
-		char meta_path[PATH_MAX];
-
-		if(sysnum == PR_open || sysnum == PR_creat)
-			sysarg = SYSARG_1;
-		else
-			sysarg = SYSARG_2;
-
-		status = read_sysarg_path(tracee, path, sysarg, MODIFIED);
-		if(status < 0) 
-			return status;
-		if(status == 1) 
-			return 0;
-
-		/* If the file exists, it doesn't matter if a metafile exists. */
-		if(path_exists(path) == 0) 
-			return 0; 
-
-		status = get_meta_path(path, meta_path);
-		if(status < 0) 
-			return status;
-
-		/* If the metafile exists and the original file does not, delete it. */
-		if(path_exists(meta_path) == 0) 
-			status = unlink(meta_path);
-
-		return 0;
-	}	
-#endif
 	case PR_shmat: 
 		return handle_shmat_sysexit_end(tracee, stage);
 	case PR_shmdt:
@@ -1035,8 +739,6 @@ static int handle_sysexit_end(Tracee *tracee, Config *config)
 		return handle_semctl_sysexit_end(tracee, stage);
 	case PR_semop:
 		return handle_semop_sysexit_end(tracee, stage);
-	case PR_prctl:
-		return handle_prctl_sysexit_end(tracee);
 
 	default:
 		return 0;
@@ -1097,7 +799,7 @@ static int handle_sysexit_start(Tracee *tracee, Config *config) {
 	struct stat mode;
 	int status;
 
-	if ((int) result < 0 || sysnum != PR_execve)
+	if ((int) result < 0 || tracee->status < 0 || sysnum != PR_execve)
 		return 0;
 
 	/* This has to be done before PRoot pushes the load
@@ -1206,56 +908,6 @@ int fake_id0_callback(Extension *extension, ExtensionEvent event, intptr_t data1
 			override_permissions(tracee, (char*) data1, (bool) data2);
 		return 0;
 	}
-
-#ifdef USERLAND
-	/** LINK2SYMLINK is an extension intended to emulate hard links on
-	 *  platforms that do not have the capability to create them. In order to
-	 *  retain functionality of metafiles, it's necessary to move the metafile
-	 *  associated with the file being linked to the end of a symlink chain.
-	 */
-	case LINK2SYMLINK_RENAME: {
-		int status;
-		char old_meta[PATH_MAX];
-		char new_meta[PATH_MAX];
-	
-		status = get_meta_path((char *) data1, old_meta);
-		if(status < 0)
-			return status;
-
-		/* If meta doesn't exist, get out. */
-		if(path_exists(old_meta) != 0)
-			return 0; 
-
-		status = get_meta_path((char *) data2, new_meta);
-		if(status < 0)
-			return status;
-
-		status = rename(old_meta, new_meta);
-		if(status < 0)
-			return status;
-
-		return 0;
-	}
-
-	case LINK2SYMLINK_UNLINK: {
-		int status;
-		char meta_path[PATH_MAX];
-
-		status = get_meta_path((char *) data1, meta_path);
-		if(status < 0)
-			return status;
-
-		/* If metafile doesn't already exist, get out */
-		if(path_exists(meta_path) != 0)
-			return 0;
-
-		status = unlink(meta_path);
-		if(status < 0) 
-			return status;
-
-		return 0;
-	}
-#endif
 
 	case SYSCALL_ENTER_END: {
 		Tracee *tracee = TRACEE(extension);

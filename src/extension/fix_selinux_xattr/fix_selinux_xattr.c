@@ -32,7 +32,6 @@ static int handle_setxattr(Tracee *tracee)
         }
 
         /* get the system call arguments */
-        word_t fd_or_path_start = peek_reg(tracee, MODIFIED, SYSARG_1);
         word_t name_start = peek_reg(tracee, CURRENT, SYSARG_2);
 
         /* check if the attribute name is security.selinux */

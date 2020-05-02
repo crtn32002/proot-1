@@ -285,14 +285,6 @@ static int handle_sysexit_end(Tracee *tracee)
 
 	sysnum = get_sysnum(tracee, ORIGINAL);
 
-	#ifdef USERLAND
-		if ((get_sysnum(tracee, CURRENT) == PR_fstat) || (get_sysnum(tracee, CURRENT) == PR_fstat64))
-			return 0;
-
-		if (((sysnum == PR_fstat) || (sysnum == PR_fstat64)) && (get_sysnum(tracee, CURRENT) == PR_readlinkat))
-			return 0;
-	#endif
-
 	switch (sysnum) {
 
 	case PR_fstatat64:                 //int fstatat(int dirfd, const char *pathname, struct stat *buf, int flags);
@@ -321,22 +313,13 @@ static int handle_sysexit_end(Tracee *tracee)
 			return 0;
 
 		if (sysnum == PR_fstat64 || sysnum == PR_fstat) {
-			#ifndef USERLAND
-				status = readlink_proc_pid_fd(tracee->pid, peek_reg(tracee, MODIFIED, SYSARG_1), original);
-				if (status < 0) {
-					VERBOSE(tracee, 3, "link2symlink: readlink_proc_pid_fd failed, status=%d", status);
-					return 0; // Don't alter syscall result
-				}
-				if (strcmp(original + strlen(original) - strlen(DELETED_SUFFIX), DELETED_SUFFIX) == 0)
-					original[strlen(original) - strlen(DELETED_SUFFIX)] = '\0';
-			#endif
-			#ifdef USERLAND
-				size = read_string(tracee, original, peek_reg(tracee, CURRENT, SYSARG_2), PATH_MAX);
-				if (size < 0)
-					return size;
-				if (size >= PATH_MAX)
-					return -ENAMETOOLONG;
-			#endif
+			status = readlink_proc_pid_fd(tracee->pid, peek_reg(tracee, MODIFIED, SYSARG_1), original);
+			if (status < 0) {
+				VERBOSE(tracee, 3, "link2symlink: readlink_proc_pid_fd failed, status=%d", status);
+				return 0; // Don't alter syscall result
+			}
+			if (strcmp(original + strlen(original) - strlen(DELETED_SUFFIX), DELETED_SUFFIX) == 0)
+				original[strlen(original) - strlen(DELETED_SUFFIX)] = '\0';
 		} else {
 			if (sysnum == PR_fstatat64 || sysnum == PR_newfstatat)
 				sysarg_path = SYSARG_2;
@@ -400,13 +383,6 @@ static int handle_sysexit_end(Tracee *tracee)
 		else
 			sysarg_stat = SYSARG_2;
 
-		#ifdef USERLAND
-			/* Overwrite the stat struct with the correct number of "links". */
-			read_data(tracee, &statl, peek_reg(tracee, ORIGINAL, sysarg_stat), sizeof(statl));
-			finalStat.st_mode = statl.st_mode;
-			finalStat.st_uid = statl.st_uid;
-			finalStat.st_gid = statl.st_gid;
-		#endif
 		status = write_data(tracee, peek_reg(tracee, ORIGINAL,  sysarg_stat), &finalStat, sizeof(finalStat));
 		if (status < 0)
 			return status;

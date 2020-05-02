@@ -148,10 +148,10 @@ typedef struct tracee {
 				     && get_sysnum((tracee), ORIGINAL) == sysnum)
 
 	/* How this tracee is restarted.  */
-#ifdef __ANDROID__
-	int
-#else
+#ifdef __GLIBC__
 	enum __ptrace_request
+#else
+	int
 #endif
 		restart_how, last_restart_how;
 
@@ -219,6 +219,10 @@ typedef struct tracee {
 	word_t pokedata_workaround_stub_addr;
 	bool pokedata_workaround_cancelled_syscall;
 	bool pokedata_workaround_relaunched_syscall;
+#endif
+
+#ifdef ARCH_ARM64
+	bool is_aarch32;
 #endif
 
 

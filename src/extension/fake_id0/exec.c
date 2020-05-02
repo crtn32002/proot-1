@@ -6,12 +6,12 @@
 
 #include "extension/fake_id0/helper_functions.h"
 
-/** Handles execve system calls. Checks permissions in a meta file if it exists
- *  and returns errors matching those in execve(2).
+/** Handles execve system calls.
+ *  If setuid or setgid bits are set, just make ourselves root.
  */
 int handle_exec_enter_end(Tracee *tracee, Reg filename_sysarg, Config *config)
 {
-	int status, perms;
+	int status;
 	char path[PATH_MAX];
 	struct stat mode;
 
